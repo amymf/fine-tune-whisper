@@ -4,6 +4,7 @@ from dataset import AMIDataset
 from torch.nn.utils.rnn import pad_sequence
 from transformers import WhisperTokenizer, WhisperForConditionalGeneration
 import wandb
+import torch.nn.functional as F
 
 wandb.init(project="whisper-finetune")
 
@@ -29,26 +30,32 @@ model.to(device)
 dataset = AMIDataset("data/manifest.jsonl", tokenizer)
 
 
+def pad_or_trim(mel: torch.Tensor, target_length=3000):
+    if mel.size(-1) > target_length:
+        mel = mel[:, :target_length]
+    elif mel.size(-1) < target_length:
+        mel = F.pad(mel, (0, target_length - mel.size(-1)))
+    return mel
+
+
 def collate_fn(batch):
-    audio = [
-        whisper.log_mel_spectrogram(item["audio"]["array"]).transpose(0, 1)
-        for item in batch
-    ]  # [n_frames, n_mels]
-    audio_padded = pad_sequence(
-        audio, batch_first=True
-    )  # [batch_size, n_frames, n_mels]
+    mels = []
+    for item in batch:
+        mel = whisper.log_mel_spectrogram(item["audio"]["array"])  # [n_mel, num_frames]
+        mel = pad_or_trim(mel, target_length=3000) 
+        mels.append(mel)
+
+    audio_batch = torch.stack(mels)
 
     input_tokens = [item["text_tokens"][:-1] for item in batch]
     target_tokens = [item["text_tokens"][1:] for item in batch]
+
     input_tokens = pad_sequence(
         input_tokens, batch_first=True, padding_value=tokenizer.pad_token_id
     )
-    target_tokens = pad_sequence(
-        target_tokens, batch_first=True, padding_value=-100
-    )  # loss ignores -100
-    # [batch_size, seq_len]
+    target_tokens = pad_sequence(target_tokens, batch_first=True, padding_value=-100)
 
-    return audio_padded, input_tokens, target_tokens
+    return audio_batch, input_tokens, target_tokens
 
 
 train_loader = torch.utils.data.DataLoader(
@@ -77,7 +84,7 @@ def train(model, train_loader, optimizer, device):
             target = target.to(device)
 
             optimizer.zero_grad()
-            logits = model(audio, input)
+            logits = model(input_features=audio, decoder_input_ids=input).logits
             loss = torch.nn.functional.cross_entropy(
                 logits.view(-1, logits.size(-1)), target.view(-1), ignore_index=-100
             )
@@ -96,6 +103,7 @@ def train(model, train_loader, optimizer, device):
     wandb.save("model.pt")
     torch.save(model.state_dict(), "model.pt")
     wandb.finish()
+
 
 if __name__ == "__main__":
     train(model, train_loader, optimizer, device)
