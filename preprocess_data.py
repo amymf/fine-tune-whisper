@@ -79,6 +79,3 @@ for i, seq in enumerate(all_sequences):
     audio = np.concatenate(audio)
     text = build_transcript(seq)
     combined_sequences.append({ "audio": { "array": audio, "sampling_rate": sr }, "text": text })
-
-train_dataset = Dataset.from_list(combined_sequences)
-train_dataset.save_to_disk("ami_train_dataset")
