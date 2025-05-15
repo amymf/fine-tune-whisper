@@ -6,6 +6,8 @@ from transformers import WhisperTokenizer, WhisperForConditionalGeneration
 import wandb
 import torch.nn.functional as F
 
+torch.cuda.empty_cache()
+
 wandb.init(project="whisper-finetune")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -60,7 +62,7 @@ def collate_fn(batch):
 
 train_loader = torch.utils.data.DataLoader(
     dataset,
-    batch_size=32,
+    batch_size=8,
     shuffle=True,
     collate_fn=collate_fn,
 )
@@ -79,9 +81,9 @@ def train(model, train_loader, optimizer, device):
     train_acc = 0
     for epoch in range(NUM_EPOCHS):
         for i, (audio, input, target) in enumerate(train_loader):
-            audio = audio.to(device)
-            input = input.to(device)
-            target = target.to(device)
+            audio = audio.to(device) # (batch_size, n_mel, num_frames)
+            input = input.to(device) # (batch_size, seq_len)
+            target = target.to(device) # (batch_size, seq_len)
 
             optimizer.zero_grad()
             logits = model(input_features=audio, decoder_input_ids=input).logits
@@ -94,9 +96,21 @@ def train(model, train_loader, optimizer, device):
 
             train_loss += loss.item()
 
+            # accuracy
+            pred = logits.argmax(dim=-1)
+            target = target.view(-1) # (batch_size * seq_len)
+            pred = pred.view(-1) # (batch_size * seq_len)
+            mask = target != -100 # ignore padding
+            correct_tokens += (pred[mask] == target[mask]).sum().item()
+            total_tokens += mask.sum().item()
+            train_acc += correct_tokens / total_tokens
+
+            torch.cuda.empty_cache()
+
         train_loss /= len(train_loader)
-        wandb.log({"train_loss": train_loss})
-        print(f"Epoch {epoch + 1}/{NUM_EPOCHS}, Loss: {train_loss:.4f}")
+        train_acc = 100 * correct_tokens / total_tokens
+        wandb.log({"train_loss": train_loss, "train_acc": train_acc})
+        print(f"Epoch {epoch + 1}/{NUM_EPOCHS}, Loss: {train_loss:.4f}, Accuracy: {train_acc:.4f}")
         # Save the model every epoch
         wandb.save("model.pt")
 
