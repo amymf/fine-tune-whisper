@@ -8,8 +8,6 @@ import torch.nn.functional as F
 
 torch.cuda.empty_cache()
 
-wandb.init(project="whisper-finetune")
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # model = whisper.load_model("tiny")
@@ -121,4 +119,5 @@ def train(model, train_loader, optimizer, device):
 
 
 if __name__ == "__main__":
+    wandb.init(project="whisper-finetune")
     train(model, train_loader, optimizer, device)

@@ -1,6 +1,7 @@
 /data
 /test-data
 /wandb
+/audio
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
