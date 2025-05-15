@@ -9,6 +9,7 @@ class AMIDataset(torch.utils.data.Dataset):
         with open (manifest_path, "r") as f:
             for line in f:
                 entry = json.loads(line)
+                # Check if the audio file exists - had issues with missing files
                 if os.path.exists(entry["audio_path"]):
                     self.entries.append(entry)
                 else:
@@ -23,7 +24,8 @@ class AMIDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         entry = self.entries[idx]
-        waveform, _ = torchaudio.load(entry["audio_path"])
+        audio_path = entry["audio_path"]
+        waveform, _ = torchaudio.load(audio_path)
         tokens = self.tokenizer.encode(entry["text"])
         return {
             "audio": {
@@ -31,4 +33,5 @@ class AMIDataset(torch.utils.data.Dataset):
                 "sampling_rate": self.sampling_rate,
             },  # [T]
             "text_tokens": torch.tensor(tokens, dtype=torch.long),
+            "audio_path": audio_path,
         }

@@ -23,7 +23,7 @@ model.eval()
 
 max_len = 448 # whisper max length
 
-for audio_batch, inputs, targets in dataloader:
+for audio_batch, _, targets, paths in dataloader:
     for i in range(len(audio_batch)):
         mel = audio_batch[i].unsqueeze(0).to(device)
         generated = [tokenizer.bos_token_id]
@@ -38,7 +38,8 @@ for audio_batch, inputs, targets in dataloader:
                     break
                 generated.append(next_token)
         original_text = tokenizer.decode(targets[i], skip_special_tokens=False)
-        generated_text = tokenizer.decode(generated, skip_special_tokens=False)
+        generated_text = tokenizer.decode(generated[1:], skip_special_tokens=False)
         print(f"Original text: {original_text}")
         print(f"Generated text: {generated_text}")
+        print(f"Audio path: {paths[i]}")
         print("-" * 100)

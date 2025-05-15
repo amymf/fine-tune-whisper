@@ -51,13 +51,14 @@ def collate_fn(batch):
 
     input_tokens = [item["text_tokens"][:-1] for item in batch]
     target_tokens = [item["text_tokens"][1:] for item in batch]
+    audio_paths = [item["audio_path"] for item in batch]
 
     input_tokens = pad_sequence(
         input_tokens, batch_first=True, padding_value=tokenizer.pad_token_id
     )
     target_tokens = pad_sequence(target_tokens, batch_first=True, padding_value=-100)
 
-    return audio_batch, input_tokens, target_tokens
+    return audio_batch, input_tokens, target_tokens, audio_paths
 
 
 train_loader = torch.utils.data.DataLoader(
