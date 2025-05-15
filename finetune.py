@@ -80,9 +80,11 @@ def train():
     model.train()
     train_loss = 0
     train_acc = 0
+    correct_train = 0
+    total_train = 0
     for epoch in range(NUM_EPOCHS):
         # train loop
-        for i, (audio, input, target) in enumerate(train_loader):
+        for i, (audio, input, target, _) in enumerate(train_loader):
             audio = audio.to(device) # (batch_size, n_mel, num_frames)
             input = input.to(device) # (batch_size, seq_len)
             target = target.to(device) # (batch_size, seq_len)
@@ -103,9 +105,9 @@ def train():
             target = target.view(-1) # (batch_size * seq_len)
             pred = pred.view(-1) # (batch_size * seq_len)
             mask = target != -100 # ignore padding
-            correct_tokens += (pred[mask] == target[mask]).sum().item()
-            total_tokens += mask.sum().item()
-            train_acc += correct_tokens / total_tokens
+            correct_train += (pred[mask] == target[mask]).sum().item()
+            total_train += mask.sum().item()
+            train_acc += correct_train / total_train
 
             torch.cuda.empty_cache()
 
@@ -113,7 +115,9 @@ def train():
         model.eval()
         val_loss = 0
         val_acc = 0
-        for i, (audio, input, target) in enumerate(val_loader):
+        correct_val = 0
+        total_val = 0
+        for i, (audio, input, target, _) in enumerate(val_loader):
             audio = audio.to(device)
             input = input.to(device)
             target = target.to(device)
@@ -131,15 +135,15 @@ def train():
                 target = target.view(-1)
                 pred = pred.view(-1)
                 mask = target != -100
-                correct_tokens += (pred[mask] == target[mask]).sum().item()
-                total_tokens += mask.sum().item()
-                val_acc += correct_tokens / total_tokens
+                correct_val += (pred[mask] == target[mask]).sum().item()
+                total_val += mask.sum().item()
+                val_acc += correct_val / total_val
                 torch.cuda.empty_cache()
 
         train_loss /= len(train_loader)
-        train_acc = 100 * correct_tokens / total_tokens
+        train_acc = 100 * correct_train / total_train
         val_loss /= len(val_loader)
-        val_acc = 100 * correct_tokens / total_tokens
+        val_acc = 100 * correct_val / total_val
         print(f"Epoch {epoch + 1}/{NUM_EPOCHS}, Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}, Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
         wandb.log({
             "train_loss": train_loss,
@@ -148,10 +152,11 @@ def train():
             "val_acc": val_acc
         })
         # Save the model every epoch
-        wandb.save("model.pt")
+        torch.save(model.state_dict(), f"model_epoch_{epoch + 1}.pt")
+        wandb.save(f"model_epoch_{epoch + 1}.pt")
 
-    wandb.save("model.pt")
     torch.save(model.state_dict(), "model.pt")
+    wandb.save("model.pt")
     wandb.finish()
 
 
