@@ -4,6 +4,7 @@ import numpy as np
 import soundfile as sf
 import os
 import json
+import random
 
 
 dataset = load_dataset("edinburghcstr/ami", "ihm")
@@ -13,9 +14,11 @@ ds = dataset["test"]
 meeting_groups = defaultdict(list)
 for row in ds:
     meeting_groups[row["meeting_id"]].append(row)
+meetings = list(meeting_groups.items())
+random.shuffle(meetings)
 
 def create_sequences(
-    utterances, max_speakers=2, max_utts_per_speaker=3, max_duration=15.0
+    utterances, max_speakers=2, max_utts_per_speaker=3, max_duration=30.0
 ):
     sequences = []
     current_seq = []
@@ -25,14 +28,16 @@ def create_sequences(
     for utt in utterances:
         speaker = utt["speaker_id"]
         dur = utt["end_time"] - utt["begin_time"]
-
+        max_s = random.randint(1, max_speakers)
+        max_u = random.randint(0, max_utts_per_speaker)
+        max_d = random.uniform(5.0, max_duration)
         if (
             (
                 speaker not in speaker_counts.keys()
-                or speaker_counts[speaker] < max_utts_per_speaker
+                or speaker_counts[speaker] < max_u
             )
-            and len(speaker_counts) < max_speakers
-            and duration + dur <= max_duration
+            and len(speaker_counts) < max_s
+            and duration + dur <= max_d
         ):
             current_seq.append(utt)
             speaker_counts[speaker] += 1
@@ -56,8 +61,9 @@ def create_sequences(
 
 
 all_sequences = []
-for meeting_id, utterances in meeting_groups.items():
-    utterances.sort(key=lambda x: x["begin_time"])
+for _, utterances in meetings:
+    # utterances.sort(key=lambda x: x["begin_time"])
+    random.shuffle(utterances)
     sequences = create_sequences(utterances)
     all_sequences.extend(sequences)
 
@@ -74,6 +80,7 @@ def build_transcript(seq):
     lines = [f"{speaker_map[utt['speaker_id']]} {utt['text']}" for utt in seq]
     return " ".join(lines)
 
+
 combined_sequences = []
 for i, seq in enumerate(all_sequences):
     audio = []
@@ -84,13 +91,10 @@ for i, seq in enumerate(all_sequences):
     text = build_transcript(seq)
     combined_sequences.append({ "audio": { "array": audio, "sampling_rate": sr }, "text": text })
 
-
-
 output_dir = "test-data/audio_sequences"
 os.makedirs(output_dir, exist_ok=True)
 
 manifest = []
-
 for i, sample in enumerate(combined_sequences):
     audio_array = sample["audio"]["array"]
     sampling_rate = sample["audio"]["sampling_rate"]

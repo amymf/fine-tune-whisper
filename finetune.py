@@ -10,7 +10,6 @@ torch.cuda.empty_cache()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# model = whisper.load_model("tiny")
 model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny")
 tokenizer = WhisperTokenizer.from_pretrained("openai/whisper-tiny")
 
@@ -19,16 +18,13 @@ existing_tokens = tokenizer.additional_special_tokens or []
 
 # Avoid duplicates
 additional_tokens = list(set(existing_tokens + new_tokens))
-
 tokenizer.add_special_tokens({"additional_special_tokens": additional_tokens})
-# print(f"embedding size: {model.get_input_embeddings().weight.size(0)}")
 model.resize_token_embeddings(len(tokenizer))
-# print(f"new embedding size: {model.get_input_embeddings().weight.size(0)}")
 
 model.to(device)
 
-dataset = AMIDataset("data/manifest.jsonl", tokenizer)
-
+train_dataset = AMIDataset("train-data/manifest.jsonl", tokenizer)
+val_dataset = AMIDataset("val-data/manifest.jsonl", tokenizer)
 
 def pad_or_trim(mel: torch.Tensor, target_length=3000):
     if mel.size(-1) > target_length:
@@ -60,9 +56,15 @@ def collate_fn(batch):
 
 
 train_loader = torch.utils.data.DataLoader(
-    dataset,
+    train_dataset,
     batch_size=8,
     shuffle=True,
+    collate_fn=collate_fn,
+)
+val_loader = torch.utils.data.DataLoader(
+    val_dataset,
+    batch_size=8,
+    shuffle=False,
     collate_fn=collate_fn,
 )
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
@@ -74,11 +76,12 @@ for param in model.model.encoder.parameters():
     param.requires_grad = False
 
 
-def train(model, train_loader, optimizer, device):
+def train():
     model.train()
     train_loss = 0
     train_acc = 0
     for epoch in range(NUM_EPOCHS):
+        # train loop
         for i, (audio, input, target) in enumerate(train_loader):
             audio = audio.to(device) # (batch_size, n_mel, num_frames)
             input = input.to(device) # (batch_size, seq_len)
@@ -106,10 +109,44 @@ def train(model, train_loader, optimizer, device):
 
             torch.cuda.empty_cache()
 
+        # val loop
+        model.eval()
+        val_loss = 0
+        val_acc = 0
+        for i, (audio, input, target) in enumerate(val_loader):
+            audio = audio.to(device)
+            input = input.to(device)
+            target = target.to(device)
+
+            with torch.no_grad():
+                logits = model(input_features=audio, decoder_input_ids=input).logits
+                loss = torch.nn.functional.cross_entropy(
+                    logits.view(-1, logits.size(-1)), target.view(-1), ignore_index=-100
+                )
+
+                val_loss += loss.item()
+
+                # accuracy
+                pred = logits.argmax(dim=-1)
+                target = target.view(-1)
+                pred = pred.view(-1)
+                mask = target != -100
+                correct_tokens += (pred[mask] == target[mask]).sum().item()
+                total_tokens += mask.sum().item()
+                val_acc += correct_tokens / total_tokens
+                torch.cuda.empty_cache()
+
         train_loss /= len(train_loader)
         train_acc = 100 * correct_tokens / total_tokens
-        wandb.log({"train_loss": train_loss, "train_acc": train_acc})
-        print(f"Epoch {epoch + 1}/{NUM_EPOCHS}, Loss: {train_loss:.4f}, Accuracy: {train_acc:.4f}")
+        val_loss /= len(val_loader)
+        val_acc = 100 * correct_tokens / total_tokens
+        print(f"Epoch {epoch + 1}/{NUM_EPOCHS}, Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}, Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+        wandb.log({
+            "train_loss": train_loss,
+            "train_acc": train_acc,
+            "val_loss": val_loss,
+            "val_acc": val_acc
+        })
         # Save the model every epoch
         wandb.save("model.pt")
 
@@ -120,4 +157,4 @@ def train(model, train_loader, optimizer, device):
 
 if __name__ == "__main__":
     wandb.init(project="whisper-finetune")
-    train(model, train_loader, optimizer, device)
+    train()
