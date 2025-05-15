@@ -1,9 +1,13 @@
-from datasets import load_dataset, Dataset
+from datasets import load_dataset
 from collections import defaultdict
 import numpy as np
+import soundfile as sf
+import os
+import json
+
 
 dataset = load_dataset("edinburghcstr/ami", "ihm")
-ds = dataset["train"]
+ds = dataset["test"]
 
 # Group utterances by meeting
 meeting_groups = defaultdict(list)
@@ -80,5 +84,30 @@ for i, seq in enumerate(all_sequences):
     text = build_transcript(seq)
     combined_sequences.append({ "audio": { "array": audio, "sampling_rate": sr }, "text": text })
 
-train_dataset = Dataset.from_list(combined_sequences)
-train_dataset.save_to_disk("ami_train_dataset")
+
+
+output_dir = "test-data/audio_sequences"
+os.makedirs(output_dir, exist_ok=True)
+
+manifest = []
+
+for i, sample in enumerate(combined_sequences):
+    audio_array = sample["audio"]["array"]
+    sampling_rate = sample["audio"]["sampling_rate"]
+    text = sample["text"]
+
+    audio_path = os.path.join(output_dir, f"seq_{i}.wav")
+    
+    # Save as 16-bit PCM WAV
+    sf.write(audio_path, audio_array, samplerate=sampling_rate, subtype='PCM_16')
+
+    # Add to manifest
+    manifest.append({
+        "audio_path": audio_path,
+        "text": text
+    })
+
+# Save manifest
+with open("test-data/manifest.jsonl", "w") as f:
+    for entry in manifest:
+        f.write(json.dumps(entry) + "\n")
