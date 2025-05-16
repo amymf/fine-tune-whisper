@@ -3,6 +3,7 @@
 /test-data
 /wandb
 /audio
+.gradio/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
